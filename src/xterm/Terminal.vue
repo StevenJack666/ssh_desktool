@@ -84,17 +84,7 @@
         </div>
         <div class="form-row">
           <input v-model="newUsername" placeholder="用户名 *" required class="input-field" />
-          <select v-model="newAuthType" class="input-field">
-            <option value="password">密码认证</option>
-            <option value="privatekey">密钥认证</option>
-          </select>
-        </div>
-        <div class="form-row" v-if="newAuthType === 'password'">
           <input v-model="newPassword" type="password" placeholder="密码" class="input-field" />
-        </div>
-        <div class="form-row" v-if="newAuthType === 'privatekey'">
-          <input v-model="newPrivateKeyPath" placeholder="私钥文件路径 *" class="input-field" />
-          <input v-model="newPassphrase" type="password" placeholder="密钥密码 (可选)" class="input-field" />
         </div>
         <div class="modal-actions">
           <button @click="saveModal" class="save-btn">保存</button>
@@ -120,9 +110,6 @@ const newHost = ref('')
 const newPort = ref(22)
 const newUsername = ref('')
 const newPassword = ref('')
-const newAuthType = ref('password')
-const newPrivateKeyPath = ref('')
-const newPassphrase = ref('')
 const selectedServerId = ref('')
 const savedSessions = ref([])
 
@@ -178,6 +165,7 @@ function openContextMenu(event, server) {
 }
 // 点击空白处关闭菜单
 function closeContextMenu() {
+  
   contextMenu.value.visible = false
 }
 
@@ -376,9 +364,6 @@ function editServer(server) {
   newPort.value = server.port || 22
   newUsername.value = server.username || ''
   newPassword.value = server.password || ''
-  newAuthType.value = server.auth_type || 'password'
-  newPrivateKeyPath.value = server.private_key_path || ''
-  newPassphrase.value = server.passphrase || ''
   selectedServerId.value = String(server.id)
   // 打开模态以便编辑
   createModal.value = true
@@ -404,9 +389,6 @@ async function selectServer(id) {
   newPort.value = server.port || 22;
   newUsername.value = server.username || '';
   newPassword.value = server.password || '';
-  newAuthType.value = server.auth_type || 'password';
-  newPrivateKeyPath.value = server.private_key_path || '';
-  newPassphrase.value = server.passphrase || '';
   selectedServerId.value = String(server.id);
 
   try {
@@ -435,9 +417,6 @@ function closeCreateModal() {
   newPort.value = 22
   newUsername.value = ''
   newPassword.value = ''
-  newAuthType.value = 'password'
-  newPrivateKeyPath.value = ''
-  newPassphrase.value = ''
   // 清除编辑状态
   selectedServerId.value = ''
 }
@@ -455,25 +434,12 @@ async function saveModal() {
       return
     }
 
-    // 根据认证方式校验必填字段
-    if (newAuthType.value === 'privatekey' && !newPrivateKeyPath.value.trim()) {
-      alert('使用密钥认证时，私钥文件路径为必填项')
-      return
-    }
-
     const data = {
       host: newHost.value.trim(),
       port: Number(newPort.value),
       username: newUsername.value.trim(),
-      auth_type: newAuthType.value
-    }
-
-    // 根据认证方式添加相应字段
-    if (newAuthType.value === 'password') {
-      data.password = newPassword.value
-    } else if (newAuthType.value === 'privatekey') {
-      data.private_key_path = newPrivateKeyPath.value.trim()
-      data.passphrase = newPassphrase.value
+      password: newPassword.value,
+      auth_type: 'password'
     }
 
     // if selectedServerId is set, treat as edit/update
@@ -488,9 +454,10 @@ async function saveModal() {
         console.error('saveModal db update failed', err)
       }
       // update local savedSessions
+      const item = { id: data.id, host: data.host, port: data.port, username: data.username, password: data.password, auth_type: data.auth_type }
       const idx = savedSessions.value.findIndex(s => String(s.id) === String(data.id))
-      if (idx >= 0) savedSessions.value.splice(idx, 1, { ...data })
-      else savedSessions.value.push({ ...data })
+      if (idx >= 0) savedSessions.value.splice(idx, 1, item)
+      else savedSessions.value.push(item)
     } else {
       await createAndSaveServer(data)
     }
