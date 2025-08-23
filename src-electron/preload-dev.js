@@ -1,7 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-console.log('=== PRELOAD SCRIPT STARTING ===');
-console.log('Preload script loading...');
 
 // 测试：直接在 window 上设置一个简单属性
 window.testPreload = 'preload-dev.js loaded successfully';
@@ -159,11 +157,21 @@ const sshApi = {
 console.log('dbApi:', dbApi);
 console.log('sshApi:', sshApi);
 
+
+
+// Database API
+const dialogApi = {
+  showOpenDialog: (options) => ipcRenderer.invoke('dialog:showOpenDialog', options),
+  showSaveDialog: (options) => ipcRenderer.invoke('dialog:showSaveDialog', options),
+  showMessageBox: (options) => ipcRenderer.invoke('dialog:showMessageBox', options),
+};
+
 // 暴露API给渲染进程
 contextBridge.exposeInMainWorld('api', {
   db: dbApi,
   ssh: sshApi,
+  dialog: dialogApi,
 });
 
 console.log('=== PRELOAD SCRIPT LOADED SUCCESSFULLY ===');
-console.log('API exposed to window.api:', { db: !!dbApi, ssh: !!sshApi });
+console.log('API exposed to window.api:', { db: !!dbApi, ssh: !!sshApi, dialog: !!dialogApi });

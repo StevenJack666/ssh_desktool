@@ -56,11 +56,27 @@ contextBridge.exposeInMainWorld("api", {
   ssh: sshApi
 });
 console.log("sshApi exposed successfully");
+const dialogApi = {
+  // 显示打开文件对话框
+  showOpenDialog: async (options) => {
+    return await ipcRenderer.invoke("dialog:showOpenDialog", options);
+  },
+  // 显示保存文件对话框
+  showSaveDialog: async (options) => {
+    return await ipcRenderer.invoke("dialog:showSaveDialog", options);
+  },
+  // 显示消息框
+  showMessageBox: async (options) => {
+    return await ipcRenderer.invoke("dialog:showMessageBox", options);
+  }
+};
 console.log("Preload script loading...");
 console.log("dbApi:", dbApi);
 console.log("sshApi:", sshApi);
+console.log("dialogApi:", dialogApi);
 contextBridge$1.exposeInMainWorld("api", {
   db: dbApi,
-  ssh: sshApi
+  ssh: sshApi,
+  dialog: dialogApi
 });
 console.log("Preload script loaded successfully");

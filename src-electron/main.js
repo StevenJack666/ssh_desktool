@@ -1,6 +1,6 @@
 import { app, session, BrowserWindow } from 'electron';
 import { createMainWindow } from './mainWindow.js';
-import { registerIPCHandlers } from './utils/ipcHandlers.js';
+import { registerIPCHandlers } from './handlers/ipcHandlers.js';
 
 let mainWindow = null;
 

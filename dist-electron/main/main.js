@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, app, session } from "electron";
+import { BrowserWindow, ipcMain, dialog, app, session } from "electron";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -99,6 +99,48 @@ function updateItemStatus(id, status) {
   const info = db.prepare(`UPDATE items SET status = ? WHERE id = ?`).run(status, id);
   return info.changes > 0;
 }
+function registerDatabaseHandlers() {
+  ipcMain.handle("db-get-items", async (event) => {
+    try {
+      return await getAllItems();
+    } catch (error) {
+      console.error("db-get-items error:", error);
+      return [];
+    }
+  });
+  ipcMain.handle("db-add-item", async (event, item) => {
+    try {
+      return await addItem(item);
+    } catch (error) {
+      console.error("db-add-item error:", error);
+      throw error;
+    }
+  });
+  ipcMain.handle("db-delete-item", async (event, id) => {
+    try {
+      return await deleteItem(id);
+    } catch (error) {
+      console.error("db-delete-item error:", error);
+      throw error;
+    }
+  });
+  ipcMain.handle("db-update-item", async (event, id, item) => {
+    try {
+      return await updateItem(id, item);
+    } catch (error) {
+      console.error("db-update-item error:", error);
+      throw error;
+    }
+  });
+  ipcMain.handle("db-update-item-status", async (event, id, status) => {
+    try {
+      return await updateItemStatus(id, status);
+    } catch (error) {
+      console.error("db-update-item-status error:", error);
+      throw error;
+    }
+  });
+}
 const clients = /* @__PURE__ */ new Map();
 function clientIsAlive(id) {
   const conn = clients.get(String(id));
@@ -197,16 +239,83 @@ function disconnectSSH(id) {
   clients.delete(id);
   return { success: true, message: "连接已断开" };
 }
+function registerSSHHandlers() {
+  ipcMain.handle("ssh-connect", async (event, id, config) => {
+    try {
+      return await createSSHClient(id, config, event);
+    } catch (error) {
+      console.error("ssh-connect error:", error);
+      return { success: false, message: error.message };
+    }
+  });
+  ipcMain.handle("ssh-send", async (event, id, command) => {
+    try {
+      return await sendCommand(id, command);
+    } catch (error) {
+      console.error("ssh-send error:", error);
+      throw error;
+    }
+  });
+  ipcMain.handle("ssh-disconnect", async (event, id) => {
+    try {
+      return await disconnectSSH(id);
+    } catch (error) {
+      console.error("ssh-disconnect error:", error);
+      throw error;
+    }
+  });
+  ipcMain.handle("ssh-alive", async (event, id) => {
+    try {
+      return await clientIsAlive(id);
+    } catch (error) {
+      console.error("ssh-alive error:", error);
+      return false;
+    }
+  });
+}
+function registerDialogHandlers() {
+  ipcMain.handle("dialog:showOpenDialog", async (event, options) => {
+    try {
+      const focusedWindow = BrowserWindow.getFocusedWindow();
+      return await dialog.showOpenDialog(focusedWindow, options);
+    } catch (error) {
+      console.error("showOpenDialog error:", error);
+      return { canceled: true, filePaths: [] };
+    }
+  });
+  ipcMain.handle("dialog:showSaveDialog", async (event, options) => {
+    try {
+      const focusedWindow = BrowserWindow.getFocusedWindow();
+      return await dialog.showSaveDialog(focusedWindow, options);
+    } catch (error) {
+      console.error("showSaveDialog error:", error);
+      return { canceled: true, filePath: "" };
+    }
+  });
+  ipcMain.handle("dialog:showMessageBox", async (event, options) => {
+    try {
+      const focusedWindow = BrowserWindow.getFocusedWindow();
+      return await dialog.showMessageBox(focusedWindow, options);
+    } catch (error) {
+      console.error("showMessageBox error:", error);
+      return { response: 0, checkboxChecked: false };
+    }
+  });
+}
 function registerIPCHandlers() {
-  ipcMain.handle("db-get-items", () => getAllItems());
-  ipcMain.handle("db-add-item", (e, item) => addItem(item));
-  ipcMain.handle("db-delete-item", (e, id) => deleteItem(id));
-  ipcMain.handle("db-update-item", (e, id, item) => updateItem(id, item));
-  ipcMain.handle("db-update-item-status", (e, id, status) => updateItemStatus(id, status));
-  ipcMain.handle("ssh-connect", (e, id, config) => createSSHClient(id, config, e));
-  ipcMain.handle("ssh-send", (e, id, command) => sendCommand(id, command));
-  ipcMain.handle("ssh-disconnect", (e, id) => disconnectSSH(id));
-  ipcMain.handle("ssh-alive", (e, id) => clientIsAlive(id));
+  console.log("Registering IPC handlers...");
+  try {
+    registerDatabaseHandlers();
+    console.log("✓ Database handlers registered");
+    registerSSHHandlers();
+    console.log("✓ SSH handlers registered");
+    registerDialogHandlers();
+    console.log("✓ Dialog handlers registered");
+    console.log("🚀 All IPC handlers registered successfully");
+  } catch (error) {
+    console.error("❌ Error registering IPC handlers:", error);
+    throw error;
+  }
 }
 process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 app.whenReady().then(() => {

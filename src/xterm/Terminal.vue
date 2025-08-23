@@ -93,8 +93,16 @@
           <input v-model="newPassword" type="password" placeholder="密码" class="input-field" />
         </div>
         <div class="form-row" v-if="newAuthType === 'privatekey'">
-          <input v-model="newPrivateKeyPath" placeholder="私钥文件路径 *" class="input-field" />
-          <input v-model="newPassphrase" type="password" placeholder="密钥密码 (可选)" class="input-field" />
+          <div class="file-input-wrapper">
+            <input 
+              v-model="newPrivateKeyPath" 
+              placeholder="私钥文件路径 *" 
+              class="input-field file-path-input" 
+              readonly
+            />
+            <button type="button" @click="selectPrivateKeyFile" class="file-select-btn">选择文件</button>
+          </div>
+          <!-- <input v-model="newPassphrase" type="password" placeholder="密钥密码 (可选)" class="input-field" /> -->
         </div>
         <div class="modal-actions">
           <button @click="saveModal" class="save-btn">保存</button>
@@ -419,6 +427,52 @@ async function selectServer(id) {
 function openSettings() {
   console.log('openSettings clicked')
   // TODO: 打开设置对话框或侧边栏
+}
+
+// 文件选择器
+async function selectPrivateKeyFile() {
+  try {
+    // 优先使用Electron的dialog API（如果可用）
+    if (window.api?.dialog) {
+      const result = await window.api.dialog.showOpenDialog({
+        title: '选择私钥文件',
+        filters: [
+          { name: '所有文件', extensions: ['*'] },
+          { name: 'SSH私钥文件', extensions: ['pem', 'key', 'ppk', 'openssh'] },
+          { name: 'PEM文件', extensions: ['pem'] },
+          { name: '密钥文件', extensions: ['key'] },
+          { name: 'PuTTY私钥', extensions: ['ppk'] }
+        ],
+        properties: ['openFile', 'showHiddenFiles']
+      })
+      
+      if (!result.canceled && result.filePaths.length > 0) {
+        newPrivateKeyPath.value = result.filePaths[0]
+      }
+    } else {
+      // fallback: 使用HTML5 file input API
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.pem,.key,.pub,*' // 常见的私钥文件扩展名
+      input.style.display = 'none'
+      
+      input.onchange = (event) => {
+        const file = event.target.files?.[0]
+        if (file) {
+          // 在浏览器环境中只能获取文件名，不能获取完整路径
+          newPrivateKeyPath.value = file.name
+          console.warn('浏览器环境下无法获取完整文件路径，仅显示文件名')
+        }
+      }
+      
+      document.body.appendChild(input)
+      input.click()
+      document.body.removeChild(input)
+    }
+  } catch (error) {
+    console.error('文件选择失败:', error)
+    alert('文件选择失败: ' + error.message)
+  }
 }
 
 // 新建会话模态窗口状态
@@ -818,6 +872,32 @@ select.input-field option {
 }
 .form-row .input-field {
   flex: 1;
+}
+
+/* 文件选择器样式 */
+.file-input-wrapper {
+  flex: 1;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.file-path-input {
+  flex: 1;
+  background: #2a2a2a !important;
+  cursor: default;
+}
+.file-select-btn {
+  padding: 8px 12px;
+  background: #4a5568;
+  color: #e5e7eb;
+  border: 1px solid #555;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.file-select-btn:hover {
+  background: #5a6578;
 }
 .modal-actions {
   display: flex;
