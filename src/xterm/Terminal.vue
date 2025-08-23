@@ -84,7 +84,17 @@
         </div>
         <div class="form-row">
           <input v-model="newUsername" placeholder="用户名 *" required class="input-field" />
+          <select v-model="newAuthType" class="input-field">
+            <option value="password">密码认证</option>
+            <option value="privatekey">密钥认证</option>
+          </select>
+        </div>
+        <div class="form-row" v-if="newAuthType === 'password'">
           <input v-model="newPassword" type="password" placeholder="密码" class="input-field" />
+        </div>
+        <div class="form-row" v-if="newAuthType === 'privatekey'">
+          <input v-model="newPrivateKeyPath" placeholder="私钥文件路径 *" class="input-field" />
+          <input v-model="newPassphrase" type="password" placeholder="密钥密码 (可选)" class="input-field" />
         </div>
         <div class="modal-actions">
           <button @click="saveModal" class="save-btn">保存</button>
@@ -102,6 +112,7 @@ import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { v4 as uuidv4 } from 'uuid'
 import 'xterm/css/xterm.css'
+// import '../css/style.css'
 
 const sessions = ref([])
 const activeSessionId = ref(null)
@@ -110,6 +121,9 @@ const newHost = ref('')
 const newPort = ref(22)
 const newUsername = ref('')
 const newPassword = ref('')
+const newAuthType = ref('password')
+const newPrivateKeyPath = ref('')
+const newPassphrase = ref('')
 const selectedServerId = ref('')
 const savedSessions = ref([])
 
@@ -364,6 +378,9 @@ function editServer(server) {
   newPort.value = server.port || 22
   newUsername.value = server.username || ''
   newPassword.value = server.password || ''
+  newAuthType.value = server.auth_type || 'password'
+  newPrivateKeyPath.value = server.private_key_path || ''
+  newPassphrase.value = server.passphrase || ''
   selectedServerId.value = String(server.id)
   // 打开模态以便编辑
   createModal.value = true
@@ -417,6 +434,9 @@ function closeCreateModal() {
   newPort.value = 22
   newUsername.value = ''
   newPassword.value = ''
+  newAuthType.value = 'password'
+  newPrivateKeyPath.value = ''
+  newPassphrase.value = ''
   // 清除编辑状态
   selectedServerId.value = ''
 }
@@ -434,12 +454,20 @@ async function saveModal() {
       return
     }
 
+    // 根据认证类型进行校验
+    if (newAuthType.value === 'privatekey' && !newPrivateKeyPath.value.trim()) {
+      alert('使用密钥认证时，必须提供私钥文件路径')
+      return
+    }
+
     const data = {
       host: newHost.value.trim(),
       port: Number(newPort.value),
       username: newUsername.value.trim(),
       password: newPassword.value,
-      auth_type: 'password'
+      auth_type: newAuthType.value,
+      private_key_path: newPrivateKeyPath.value.trim(),
+      passphrase: newPassphrase.value
     }
 
     // if selectedServerId is set, treat as edit/update
@@ -454,7 +482,16 @@ async function saveModal() {
         console.error('saveModal db update failed', err)
       }
       // update local savedSessions
-      const item = { id: data.id, host: data.host, port: data.port, username: data.username, password: data.password, auth_type: data.auth_type }
+      const item = { 
+        id: data.id, 
+        host: data.host, 
+        port: data.port, 
+        username: data.username, 
+        password: data.password, 
+        auth_type: data.auth_type,
+        private_key_path: data.private_key_path,
+        passphrase: data.passphrase
+      }
       const idx = savedSessions.value.findIndex(s => String(s.id) === String(data.id))
       if (idx >= 0) savedSessions.value.splice(idx, 1, item)
       else savedSessions.value.push(item)
@@ -549,6 +586,18 @@ html, body, #app {
 .session-add { display: flex; gap: 10px; padding: 10px; background: #222; }
 .input-field { padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: #eee; }
 .input-field:focus { border-color: #4caf50; outline: none; }
+select.input-field { 
+  background: #333; 
+  color: #eee; 
+  border: 1px solid #555; 
+  padding: 8px; 
+  border-radius: 4px; 
+  cursor: pointer;
+}
+select.input-field option {
+  background: #333;
+  color: #eee;
+}
 .port-input { width: 100px; }
 .create-btn { padding: 8px 16px; background: #4caf50; color: white; border: none; border-radius: 4px; cursor: pointer; }
 
