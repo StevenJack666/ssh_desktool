@@ -3,6 +3,7 @@ import {
     registerSSHHandlers,
     registerDialogHandlers
 } from './index.js';
+import { registerWindowHandlers } from './windowHandlers.js';
 
 /**
  * 注册所有IPC处理器
@@ -23,6 +24,10 @@ function registerIPCHandlers() {
         // 注册对话框相关处理器
         registerDialogHandlers();
         console.log('✓ Dialog handlers registered');
+        
+        // 注册窗口相关处理器
+        registerWindowHandlers();
+        console.log('✓ Window handlers registered');
         
         console.log('🚀 All IPC handlers registered successfully');
     } catch (error) {

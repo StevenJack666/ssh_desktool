@@ -1,8 +1,6 @@
 import { app, session, BrowserWindow } from 'electron';
-import { createMainWindow } from './mainWindow.js';
+import { windowManager } from './windowManager.js';
 import { registerIPCHandlers } from './handlers/ipcHandlers.js';
-
-let mainWindow = null;
 
 process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true';
 
@@ -12,16 +10,19 @@ app.whenReady().then(() => {
     session.defaultSession.clearCache();
   }
 
-  mainWindow = createMainWindow();
+  const mainWindow = windowManager.createMainWindow();
   registerIPCHandlers();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      windowManager.createMainWindow();
+    }
   });
 });
 
 app.on('window-all-closed', () => {
   session.defaultSession.clearCache();
+  windowManager.closeAllSessionWindows();
 
   if (process.platform !== 'darwin') app.quit();
 });

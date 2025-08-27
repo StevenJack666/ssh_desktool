@@ -12,6 +12,8 @@ const dbApi = {
   deleteItem: (id) => ipcRenderer.invoke('db-delete-item', id),
   // 新增：更新条目的状态（例如标记为 'disconnected'）
   updateItemStatus: (id, status) => ipcRenderer.invoke('db-update-item-status', id, status),
+  // 新增：更新条目的显示名称
+  updateItemDisplayName: (id, displayName) => ipcRenderer.invoke('db-update-item-display-name', id, displayName),
 };
 
 // listener holders to allow removing specific handlers later
@@ -166,12 +168,53 @@ const dialogApi = {
   showMessageBox: (options) => ipcRenderer.invoke('dialog:showMessageBox', options),
 };
 
+// Window API
+const windowApi = {
+  createSessionWindow: (sessionData) => ipcRenderer.invoke('window-create-session', sessionData),
+  closeSessionWindow: (sessionId) => ipcRenderer.invoke('window-close-session', sessionId),
+  getSessionWindowStatus: (sessionId) => ipcRenderer.invoke('window-get-session-status', sessionId),
+  focusSessionWindow: (sessionId) => ipcRenderer.invoke('window-focus-session', sessionId),
+  
+  // 监听会话窗口关闭事件
+  onSessionWindowClosed: (callback) => {
+    const wrappedCallback = (event, sessionId) => callback(event, sessionId);
+    ipcRenderer.on('session-window-closed', wrappedCallback);
+    return wrappedCallback; // 返回包装的回调函数以便精确移除
+  },
+  
+  // 移除会话窗口关闭事件监听器
+  offSessionWindowClosed: (callback) => {
+    if (callback) {
+      ipcRenderer.removeListener('session-window-closed', callback);
+    } else {
+      ipcRenderer.removeAllListeners('session-window-closed');
+    }
+  },
+  
+  // 监听会话数据（用于新打开的会话窗口）
+  onSessionData: (callback) => {
+    const wrappedCallback = (event, sessionData) => callback(event, sessionData);
+    ipcRenderer.on('session-data', wrappedCallback);
+    return wrappedCallback; // 返回包装的回调函数以便精确移除
+  },
+  
+  // 移除会话数据监听器
+  offSessionData: (callback) => {
+    if (callback) {
+      ipcRenderer.removeListener('session-data', callback);
+    } else {
+      ipcRenderer.removeAllListeners('session-data');
+    }
+  }
+};
+
 // 暴露API给渲染进程
 contextBridge.exposeInMainWorld('api', {
   db: dbApi,
   ssh: sshApi,
   dialog: dialogApi,
+  window: windowApi,
 });
 
 console.log('=== PRELOAD SCRIPT LOADED SUCCESSFULLY ===');
-console.log('API exposed to window.api:', { db: !!dbApi, ssh: !!sshApi, dialog: !!dialogApi });
+console.log('API exposed to window.api:', { db: !!dbApi, ssh: !!sshApi, dialog: !!dialogApi, window: !!windowApi });

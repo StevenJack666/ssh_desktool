@@ -43,6 +43,12 @@ export default defineConfig({
       outDir: 'dist',
       sourcemap: true,
       minify: 'esbuild',
+      rollupOptions: {
+        input: {
+          main: 'index.html',
+          session: 'session.html'
+        }
+      }
     },
 
     // css: {

@@ -16,45 +16,79 @@ const sshApi = {
     ping: (sessionId) => ipcRenderer.invoke('ssh-alive', sessionId),
 
     // 监听SSH输出
-    onOutput: (sessionId, callback) => ipcRenderer.on(`ssh-output:${String(sessionId)}`, 
-        (event, data) => callback(data)),
-    offOutput: (sessionId, callback) => ipcRenderer.removeAllListeners(`ssh-output:${String(sessionId)}`),
+    onOutput: (sessionId, callback) => {
+        const eventName = `ssh-output:${String(sessionId)}`;
+        const wrappedCallback = (event, data) => callback(data);
+        ipcRenderer.on(eventName, wrappedCallback);
+        return wrappedCallback; // 返回包装的回调函数以便精确移除
+    },
+    offOutput: (sessionId, callback) => {
+        const eventName = `ssh-output:${String(sessionId)}`;
+        if (callback) {
+            ipcRenderer.removeListener(eventName, callback);
+        } else {
+            ipcRenderer.removeAllListeners(eventName);
+        }
+    },
     
     // 监听连接状态
-    onStatusChange: (sessionId, callback) => ipcRenderer.on(`ssh-status:${String(sessionId)}`, 
-        (event, status, config) => callback({ status, config })),
-    offStatusChange: (sessionId) => ipcRenderer.removeAllListeners(`ssh-status:${String(sessionId)}`),
+    onStatusChange: (sessionId, callback) => {
+        const eventName = `ssh-status:${String(sessionId)}`;
+        const wrappedCallback = (event, status, config) => callback({ status, config });
+        ipcRenderer.on(eventName, wrappedCallback);
+        return wrappedCallback; // 返回包装的回调函数以便精确移除
+    },
+    offStatusChange: (sessionId, callback) => {
+        const eventName = `ssh-status:${String(sessionId)}`;
+        if (callback) {
+            ipcRenderer.removeListener(eventName, callback);
+        } else {
+            ipcRenderer.removeAllListeners(eventName);
+        }
+    },
     
     // 错误信息
     onError: (sessionId, callback) => {
-        ipcRenderer.on(`ssh-error:${String(sessionId)}`, (event, error) => {
-            callback(error);
-        });
+        const eventName = `ssh-error:${String(sessionId)}`;
+        const wrappedCallback = (event, error) => callback(error);
+        ipcRenderer.on(eventName, wrappedCallback);
+        return wrappedCallback; // 返回包装的回调函数以便精确移除
     },
-    offError: (sessionId) => ipcRenderer.removeAllListeners(`ssh-error:${String(sessionId)}`),
+    offError: (sessionId, callback) => {
+        const eventName = `ssh-error:${String(sessionId)}`;
+        if (callback) {
+            ipcRenderer.removeListener(eventName, callback);
+        } else {
+            ipcRenderer.removeAllListeners(eventName);
+        }
+    },
 
-    // 监听断开连接事件
+    // 监听断开连接事件 - 使用专用的断开连接事件
     onDisconnect: (sessionId, callback) => {
-        console.log(`Binding to ssh-status:${String(sessionId)}`);
-        ipcRenderer.on(`ssh-status:${String(sessionId)}`, (event, status, config) => {
-            console.log(`Received ssh-status:${String(sessionId)} with status: ${status}`);
-            if (status === 'disconnected' || status === 'closed' || status === 'ended' || status === 'error') {
-                try {
-                    callback({ status, config });
-                } catch (e) {
-                    console.error('onDisconnect callback error', e);
-                }
+        const eventName = `ssh-disconnect:${String(sessionId)}`;
+        console.log(`Binding to ${eventName}`);
+        const wrappedCallback = (event, data) => {
+            console.log(`Received ${eventName}`);
+            try {
+                callback(data);
+            } catch (e) {
+                console.error('onDisconnect callback error', e);
             }
-        });
+        };
+        ipcRenderer.on(eventName, wrappedCallback);
+        return wrappedCallback; // 返回包装的回调函数以便精确移除
     },
-    offDisconnect: (sessionId) => ipcRenderer.removeAllListeners(`ssh-status:${String(sessionId)}`),
+    offDisconnect: (sessionId, callback) => {
+        const eventName = `ssh-disconnect:${String(sessionId)}`;
+        if (callback) {
+            ipcRenderer.removeListener(eventName, callback);
+        } else {
+            ipcRenderer.removeAllListeners(eventName);
+        }
+    },
 };
 
-console.log('Exposing sshApi to window.api:', sshApi);
-contextBridge.exposeInMainWorld('api', {
-    ssh: sshApi
-});
-console.log('sshApi exposed successfully');
+console.log('SSH API module loaded');
 
 export default sshApi;
 
