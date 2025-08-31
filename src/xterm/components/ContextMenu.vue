@@ -5,7 +5,7 @@
     :style="{ top: y + 'px', left: x + 'px' }"
   >
     <li @click="handleConnect">连接</li>
-    <li @click="handleOpenInNewWindow">在新窗口中打开</li>
+    <!-- <li @click="handleOpenInNewWindow">在新窗口中打开</li> -->
     <li class="separator"></li>
     <li @click="handleEdit">编辑</li>
     <li @click="handleRename">重命名</li>

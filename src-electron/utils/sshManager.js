@@ -42,6 +42,7 @@ function updateStatus(client, id, config, status) {
 }
 
 // ---------------------- 创建 SSH 客户端 ----------------------
+
 export async function createSSHClient(id, config, event) {
   id = String(id);
   console.log('createSSHClient 开始连接，配置信息:', {
@@ -59,6 +60,7 @@ export async function createSSHClient(id, config, event) {
   const sshClient = new Client();
   clients.set(id, sshClient);
   sshClient._sender = event?.sender || null;
+
 
   return new Promise((resolve) => {
     let resolved = false; // 确保只 resolve 一次

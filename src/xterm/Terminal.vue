@@ -94,7 +94,6 @@
     </main>
 
     <!-- 右键菜单 -->
-        <!-- 右键菜单 -->
     <ContextMenu
       :visible="contextMenu.visible"
       :x="contextMenu.x"
@@ -114,26 +113,6 @@
       :edit-mode="editMode"
       @close="handleCloseModal"
       @save="handleSaveServer"
-    />
-
-    <!-- 标签页右键菜单 -->
-    <TabContextMenu
-      :visible="tabContextMenu.visible"
-      :x="tabContextMenu.x"
-      :y="tabContextMenu.y"
-      :session="tabContextMenu.session"
-      @close-session="handleCloseSession"
-      @close-others="handleCloseOtherSessions"
-      @close-to-right="handleCloseSessionsToRight"
-      @close-all="handleCloseAllSessions"
-      
-      @duplicate="handleDuplicateSession"
-      @reconnect="handleReconnectSession"
-      @editConnection="handleEditSessionConnection"
-      
-      @closeOthers="handleCloseOtherSessions"
-      @closeToRight="handleCloseSessionsToRight"
-      @closeAll="handleCloseAllSessions"
     />
 
     <!-- 所有会话菜单 -->
@@ -334,9 +313,11 @@ function handleOpenContextMenu(event, server) {
   openContextMenu(event, server)
 }
 
+
 async function handleConnectServer(server) {
   console.log('📞 handleConnectServer called with:', server)
-  console.trace('📞 handleConnectServer call stack')
+
+  const serverId = String(server.id)
   if (!server) return
   try {
     closeContextMenu()
@@ -451,60 +432,6 @@ function handleShowTabContextMenu(event, session) {
     y: event.clientY,
     session: session
   }
-}
-
-function handleDuplicateSession(session) {
-  // 复制会话 - 创建同样配置的新会话
-  if (session.serverData) {
-    createNewSession(session.serverData, true)
-  }
-  closeTabContextMenu()
-}
-
-function handleCloseOtherSessions(sessionId) {
-  // 关闭除指定会话外的所有会话
-  sessions.value.forEach(session => {
-    if (String(session.id) !== String(sessionId)) {
-      deleteSession(session.id)
-    }
-  })
-  closeTabContextMenu()
-}
-
-function handleCloseSessionsToRight(sessionId) {
-  // 关闭指定会话右侧的所有会话
-  const sessionIndex = sessions.value.findIndex(s => String(s.id) === String(sessionId))
-  if (sessionIndex >= 0) {
-    const sessionsToClose = sessions.value.slice(sessionIndex + 1)
-    sessionsToClose.forEach(session => {
-      deleteSession(session.id)
-    })
-  }
-  closeTabContextMenu()
-}
-
-function handleCloseAllSessions() {
-  // 关闭所有会话
-  sessions.value.forEach(session => {
-    deleteSession(session.id)
-  })
-  closeTabContextMenu()
-}
-
-async function handleReconnectSession(session) {
-  // 重新连接会话
-  if (session) {
-    await connectSession(session)
-  }
-  closeTabContextMenu()
-}
-
-function handleEditSessionConnection(session) {
-  // 编辑会话连接配置
-  if (session?.serverData) {
-    handleEditServer(session.serverData)
-  }
-  closeTabContextMenu()
 }
 
 function closeTabContextMenu() {

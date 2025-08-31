@@ -85,17 +85,17 @@ async function handleReconnect() {
     
     // 如果已有会话，先删除
     if (currentSessionId) {
-      deleteSession(currentSessionId)
+      await deleteSession(currentSessionId)
+      currentSessionId = null
+      isConnected.value = false
     }
     
     // 创建新会话
     const session = await createNewSession({ ...sessionData.value }, false)
     if (session) {
       currentSessionId = session.id
-      
       // 设置终端容器
-      setTerminalContainer(terminalElement.value, 0)
-      
+      setTerminalContainer(terminalElement.value, session.id)
       // 连接会话
       await connectSession(session)
       isConnected.value = true
@@ -118,14 +118,18 @@ function handleDisconnect() {
 }
 
 // 监听来自主进程的会话数据
+let reconnectTriggered = false
+
 function handleSessionData(event, data) {
   console.log('Received session data:', data)
   sessionData.value = data
-  
-  // 自动开始连接
-  nextTick(() => {
-    handleReconnect()
-  })
+
+  if (!reconnectTriggered && sessionData.value) {
+    reconnectTriggered = true
+    nextTick(() => handleReconnect().finally(() => {
+      reconnectTriggered = false
+    }))
+  }
 }
 
 // 初始化
