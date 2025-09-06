@@ -5,10 +5,6 @@ export function registerSSHHandlers() {
     // SSH连接
     ipcMain.handle('ssh-connect', async (event, id, config) => {
         try {
-            console.log('ssh-connect handler 接收到的参数:', {
-                id,
-                config: JSON.stringify(config, null, 2)
-            });
             console.log('config对象的所有键:', Object.keys(config));
             return await sshManager.createSSHClient(id, config, event);
         } catch (error) {

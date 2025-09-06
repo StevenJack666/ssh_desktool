@@ -1,7 +1,8 @@
 import { 
     registerDatabaseHandlers,
     registerSSHHandlers,
-    registerDialogHandlers
+    registerDialogHandlers,
+    registerSFTPHandlers
 } from './index.js';
 import { registerWindowHandlers } from './windowHandlers.js';
 
@@ -20,6 +21,10 @@ function registerIPCHandlers() {
         // 注册SSH相关处理器
         registerSSHHandlers();
         console.log('✓ SSH handlers registered');
+        
+        // 注册SFTP相关处理器
+        registerSFTPHandlers();
+        console.log('✓ SFTP handlers registered');
         
         // 注册对话框相关处理器
         registerDialogHandlers();

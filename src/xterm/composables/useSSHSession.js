@@ -23,22 +23,30 @@ export function useSSHSession() {
 
   function setTerminalContainer(el, sessionId) {
     if (el && sessionId) {
-      console.log(`[Container] Setting container for session ${sessionId}`)
+      const sessionIdStr = String(sessionId)
+      console.log(`[Container] Setting container for session ${sessionIdStr}`)
+      
+      // 检查是否已经设置过相同的容器，避免重复操作
+      const existingContainer = terminalContainers.value.get(sessionIdStr)
+      if (existingContainer === el) {
+        console.log(`[Container] Container already set for session ${sessionIdStr}, skipping`)
+        return
+      }
+      
       // Ensure the container fills available space and is visible before open/fit
       el.style.display = 'flex'
       el.style.flex = '1 1 auto'
       el.style.minHeight = '0'
 
-      terminalContainers.value.set(String(sessionId), el)
+      terminalContainers.value.set(sessionIdStr, el)
       
       // 如果会话已经存在且还没有容器，立即绑定
-      const session = sessions.value.find(s => String(s.id) === String(sessionId))
+      const session = sessions.value.find(s => String(s.id) === sessionIdStr)
       if (session && !session.container) {
-        console.log(`[Container] Immediately binding terminal for session ${sessionId}`)
+        console.log(`[Container] Immediately binding terminal for session ${sessionIdStr}`)
         session.container = el
         session.terminal.open(el)
-        
-        // 等待布局稳定后再 fit + focus
+        // 只在首次绑定时调用fitFocusRefresh
         fitFocusRefresh(session)
       }
     }
@@ -78,6 +86,10 @@ export function useSSHSession() {
           cursorWidth: 1,
           scrollback: 1000,
           allowTransparency: true,
+          convertEol: false,  // 不转换行尾符，保持原始控制字符
+          altClickMovesCursor: false,  // 禁用alt点击移动光标
+          scrollOnUserInput: false,  // 禁用用户输入时自动滚动，防止跳跃
+          fastScrollModifier: 'none',  // 禁用快速滚动，避免滚动跳跃
           theme: { background: '#000000', foreground: '#ffffff', cursor: '#ffffff', cursorAccent: '#000000' }
         })
         const fitAddon = new FitAddon()
@@ -179,12 +191,10 @@ export function useSSHSession() {
 
     // 设置冷却时间
     connectionCooldowns.set(sessionId, now)
-
     // 设置连接状态
     session.isConnecting = true
     session.isConnected = false
-    session.terminal.write('\x1b[33m正在连接...\x1b[0m\r\n')
-
+    session.terminal.write('\r\x1b[33m正在连接...\x1b[0m\r\n')
     // 构建连接参数
     const connectionParams = {
       host: session.host,
@@ -246,6 +256,7 @@ export function useSSHSession() {
   }
 
   function bindSessionIPC(session) {
+    console.log('zhangmm___test')
     const id = String(session.id)
     if (!window.api?.ssh) return
 
@@ -381,15 +392,6 @@ export function useSSHSession() {
     // 清理终端容器引用
     terminalContainers.value.delete(String(id))
     
-    // 从数据库删除（如果适用）
-    if (window.api?.db) {
-      try {
-        await window.api.db.deleteItem(id)
-      } catch (e) {
-        console.warn('Failed to delete from database:', e)
-      }
-    }
-    
     // 从会话列表中移除
     const idx = sessions.value.findIndex(s => String(s.id) === String(id))
     if (idx >= 0) {
@@ -432,7 +434,10 @@ export function useSSHSession() {
         s.container = container
         s.terminal.open(container)
       }
-      fitFocusRefresh(s)
+      // 每次切换都刷新终端显示，避免内容错乱
+      if (container) {
+        fitFocusRefresh(s)
+      }
     } else {
       console.warn(`[Switch] Session ${sessionId} not found`)
     }
@@ -452,23 +457,29 @@ export function useSSHSession() {
     }
   }
 
-  async function fitFocusRefresh(session) {
-    // Wait for DOM paint and fonts to be ready (important for correct char metrics)
-    try { await nextTick() } catch {}
-    try { if (document.fonts && document.fonts.ready) { await document.fonts.ready } } catch {}
-    await new Promise(r => requestAnimationFrame(r))
-    try {
-      session.fitAddon.fit()
-      session.terminal.focus()
-      session.terminal.refresh(0, session.terminal.rows - 1)
-    } catch {}
-    // Second pass after one more frame to stabilize
-    await new Promise(r => requestAnimationFrame(r))
-    try {
+ 
+            
+    async function fitFocusRefresh(session) {
+      if (!session.container) return
+
+      // 等待 DOM 和字体
+      try { await nextTick() } catch {}
+      try { if (document.fonts?.ready) await document.fonts.ready } catch {}
+      await new Promise(r => requestAnimationFrame(r))
+
+      // fit + refresh
       session.fitAddon.fit()
       session.terminal.refresh(0, session.terminal.rows - 1)
-    } catch {}
-  }
+
+      await new Promise(r => requestAnimationFrame(r))
+
+      // 再次 fit + refresh，保证尺寸稳定
+      session.fitAddon.fit()
+      session.terminal.refresh(0, session.terminal.rows - 1)
+      session.terminal.focus()            // 只进行聚焦
+    }
+
+
 
   let resizeTimer = null
   function refitActiveTerminal() {

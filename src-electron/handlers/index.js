@@ -6,6 +6,7 @@
 export { registerDatabaseHandlers } from './databaseHandlers.js';
 export { registerSSHHandlers } from './sshHandlers.js';
 export { registerDialogHandlers } from './dialogHandlers.js';
+export { registerSFTPHandlers } from './sftpHandlers.js';
 
 // 未来可以在这里添加更多处理器
 // export { registerFileHandlers } from './fileHandlers.js';

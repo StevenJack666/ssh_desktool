@@ -322,15 +322,17 @@ body {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
-  /* Remove fixed 100% height to avoid double-counting tabs/header height */
-  /* height: 100%; */
   width: 100%;
   margin: 0;
-  padding: 0;
-  overflow: hidden;
+  /* 增加底部间距，确保有足够的滚动空间 */
+  padding: 0 0 150px 0;
+  /* 启用溢出滚动，确保内容可见 */
+  overflow: auto;
   position: relative;
-  /* Ensure flex child can compute height properly */
   min-height: 0;
+  /* 使用flex布局的自动高度，不使用固定数值 */
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .terminal {
@@ -338,25 +340,44 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  position: relative;
-  flex: 1 1 auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: #000;
-  min-height: 0;
   margin: 0;
-  padding: 0;
-  overflow: hidden;
+  /* 添加足够的底部内边距，确保至少可以看到3行额外内容 */
+  padding: 4px 4px 100px 4px;
+  overflow: auto; /* 启用滚动 */
+  box-sizing: border-box;
+  border-radius: 4px;
+  /* 确保内容区始终可滚动 */
+  overflow-y: scroll !important;
 }
 
 .terminal .xterm {
   width: 100% !important;
-  height: 100% !important;
+  height: auto !important; /* 改为自动高度 */
+  min-height: 100% !important;
   flex: 1;
+  /* 大幅增加底部内边距，确保能看到3行 */
+  padding-bottom: 120px;
+  box-sizing: border-box;
+  /* 阻止 xterm 的溢出隐藏行为 */
+  overflow: visible !important;
 }
 
 /* Avoid forcing sizes on internal layers to prevent incorrect fit calculations */
 .terminal .xterm-viewport {
   background: #000 !important;
   box-sizing: border-box;
+  /* 强制启用垂直滚动 */
+  overflow-y: scroll !important;
+  /* 大幅增加底部内边距 */
+  padding-bottom: 120px;
+  /* 确保内容可见 */
+  max-height: none !important;
 }
 
 /* Remove previous width/height overrides on .xterm-screen to let xterm manage its own layout */
@@ -364,13 +385,15 @@ body {
 
 /* 确保xterm光标正常显示 */
 .terminal .xterm .xterm-cursor-layer {
-  z-index: 1 !important;
+  z-index: 100 !important; /* 提高光标层级 */
+  position: relative !important;
 }
 
 .terminal .xterm .xterm-cursor {
   background-color: #ffffff !important;
   color: #000000 !important;
   opacity: 1 !important;
+  box-shadow: 0 0 5px rgba(255, 255, 255, 0.5); /* 光标发光效果 */
 }
 
 .terminal .xterm .xterm-cursor.xterm-cursor-blink {
@@ -420,7 +443,8 @@ body {
 /* 主内容区域让出侧边栏空间，并垂直布局 */
 .main-area {
   margin-left: 280px;
-  padding: 12px;
+  /* 使用更合理的内边距，上下左右保持一致 */
+  padding: 12px 12px 16px 12px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -428,4 +452,54 @@ body {
   overflow: hidden;
   /* Ensure children using flex can shrink and measure correctly */
   min-height: 0;
+}
+
+/* 自定义滚动条样式 */
+.terminal::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.terminal::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+}
+
+.terminal::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.2);
+}
+
+.terminal::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* 添加滚动占位符，确保内容底部有足够空间 */
+.terminal::after {
+  content: '';
+  display: block;
+  height: 150px;
+  width: 100%;
+}
+
+/* 修复行容器位置，确保底部行可见 */
+.terminal .xterm-rows {
+  /* 使用足够大的固定像素值确保底部行可见 */
+  padding-bottom: 150px !important;
+  /* 确保行容器不被截断 */
+  overflow: visible !important;
+  /* 调整行高确保一致性 */
+  line-height: 1.2 !important;
+}
+
+/* 设置终端屏幕样式，确保内容完全显示 */
+.terminal .xterm-screen {
+  /* 移除高度限制，让内容完全展示 */
+  height: auto !important;
+  min-height: 100% !important;
+  /* 底部增加空间 */
+  margin-bottom: 100px !important;
+  /* 确保不被截断 */
+  overflow: visible !important;
 }

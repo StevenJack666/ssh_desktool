@@ -121,23 +121,11 @@ const sshApi = {
    // 监听断开连接事件
    onDisconnect: (sessionId, callback) => {
        const key = String(sessionId);
-       const chan = `ssh-status:${key}`;
-       const handler = (event, statusOrPayload, maybeConfig) => {
+       const chan = `ssh-disconnect:${key}`;  // 使用独立的频道
+       const handler = (event, data) => {
           try {
-            let status = statusOrPayload;
-            let config = maybeConfig;
-            if (statusOrPayload && typeof statusOrPayload === 'object' && ('status' in statusOrPayload)) {
-              status = statusOrPayload.status;
-              config = statusOrPayload.config || statusOrPayload;
-            }
-            console.log(`preload: onDisconnect received status='${status}' for session=${sessionId}`, { config });
-            if (status === 'disconnected' || status === 'closed' || status === 'ended' || status === 'error') {
-                try {
-                  callback({ status, config: config || null });
-                } catch (e) {
-                  console.error('onDisconnect callback error', e);
-                }
-            }
+            console.log(`preload: onDisconnect received data for session=${sessionId}`, data);
+            callback(data || {});
           } catch (e) {
             console.error('onDisconnect handler error', e);
           }
@@ -145,9 +133,10 @@ const sshApi = {
       ipcRenderer.on(chan, handler);
       _listeners.disconnect.set(key, handler);
    },
+
    offDisconnect: (sessionId) => {
        const key = String(sessionId);
-       const chan = `ssh-status:${key}`;
+       const chan = `ssh-disconnect:${key}`;  // 使用独立的频道
        const handler = _listeners.disconnect.get(key);
        if (handler) {
         ipcRenderer.removeListener(chan, handler);
@@ -160,12 +149,58 @@ console.log('dbApi:', dbApi);
 console.log('sshApi:', sshApi);
 
 
-
 // Database API
 const dialogApi = {
   showOpenDialog: (options) => ipcRenderer.invoke('dialog:showOpenDialog', options),
   showSaveDialog: (options) => ipcRenderer.invoke('dialog:showSaveDialog', options),
   showMessageBox: (options) => ipcRenderer.invoke('dialog:showMessageBox', options),
+};
+
+// SFTP API
+const sftpApi = {
+  // 上传文件到远程服务器
+  upload: (sessionId, localPath, remotePath, tempUploadId) => {
+    return ipcRenderer.invoke('sftp-upload', sessionId, localPath, remotePath, tempUploadId);
+  },
+  
+  // 列出远程目录内容
+  listDirectory: (sessionId, remotePath) => {
+    return ipcRenderer.invoke('sftp-list-directory', sessionId, remotePath);
+  },
+  
+  // 创建远程目录
+  mkdir: (sessionId, remotePath) => {
+    return ipcRenderer.invoke('sftp-mkdir', sessionId, remotePath);
+  },
+  
+  // 监听文件上传进度
+  onUploadProgress: (sessionId, callback) => {
+    const channel = `sftp-upload-progress:${sessionId}`;
+    
+    // 包装回调函数，便于后续移除
+    const wrappedCallback = (event, ...args) => callback(...args);
+    
+    ipcRenderer.on(channel, wrappedCallback);
+    
+    // 返回清理函数
+    return () => {
+      ipcRenderer.removeListener(channel, wrappedCallback);
+    };
+  },
+  
+  // 取消文件上传
+  cancelUpload: (sessionId, uploadId) => {
+    console.log(`🟡 sftpApi.cancelUpload 被调用: sessionId=${sessionId}, uploadId=${uploadId}`);
+    return ipcRenderer.invoke('sftp-cancel-upload', sessionId, uploadId)
+      .then(result => {
+        console.log(`🟡 ipcRenderer.invoke 结果:`, result);
+        return result;
+      })
+      .catch(error => {
+        console.error(`🟡 ipcRenderer.invoke 错误:`, error);
+        throw error;
+      });
+  }
 };
 
 // Window API
@@ -208,13 +243,15 @@ const windowApi = {
   }
 };
 
+console.log('sftpApi:', sftpApi);
+
 // 暴露API给渲染进程
 contextBridge.exposeInMainWorld('api', {
   db: dbApi,
   ssh: sshApi,
   dialog: dialogApi,
   window: windowApi,
+  sftp: sftpApi,
 });
 
-console.log('=== PRELOAD SCRIPT LOADED SUCCESSFULLY ===');
-console.log('API exposed to window.api:', { db: !!dbApi, ssh: !!sshApi, dialog: !!dialogApi, window: !!windowApi });
+console.log('API exposed to window.api:', { db: !!dbApi, ssh: !!sshApi, dialog: !!dialogApi, window: !!windowApi, sftp: !!sftpApi });

@@ -6,6 +6,16 @@
   >
     <li @click="handleConnect">连接</li>
     <!-- <li @click="handleOpenInNewWindow">在新窗口中打开</li> -->
+    <li @click="handleUploadFile" v-if="isConnected">
+      <span class="menu-icon">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+      </span>
+      上传文件
+    </li>
     <li class="separator"></li>
     <li @click="handleEdit">编辑</li>
     <li @click="handleRename">重命名</li>
@@ -27,10 +37,14 @@ const props = defineProps({
   server: {
     type: Object,
     default: null
+  },
+  isConnected: {
+    type: Boolean,
+    default: false
   }
 })
 
-const emit = defineEmits(['connect', 'open-in-new-window', 'edit', 'rename', 'delete'])
+const emit = defineEmits(['connect', 'open-in-new-window', 'edit', 'rename', 'delete', 'upload-file'])
 
 function handleConnect() {
   console.log('ContextMenu handleConnect clicked for server:', props.server)
@@ -55,6 +69,11 @@ function handleRename() {
 function handleDelete() {
   console.log('ContextMenu handleDelete clicked for server:', props.server)
   emit('delete', props.server.id)
+}
+
+function handleUploadFile() {
+  console.log('ContextMenu handleUploadFile clicked for server:', props.server)
+  emit('upload-file', props.server)
 }
 </script>
 
@@ -81,6 +100,12 @@ function handleDelete() {
   align-items: center;
   gap: 8px;
   font-size: 13px;
+}
+
+.menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .context-menu li:hover {

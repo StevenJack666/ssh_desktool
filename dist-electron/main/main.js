@@ -348,7 +348,20 @@ async function createSSHClient(id, config, event) {
     };
     sshClient.on("ready", () => {
       console.log("SSH客户端ready事件触发, id:", id);
-      sshClient.shell((err, stream) => {
+      sshClient.shell({
+        term: "xterm-256color",
+        // 设置终端类型，确保支持全功能
+        width: 80,
+        height: 24,
+        modes: {
+          ICANON: false,
+          // 禁用行缓冲模式，启用原始模式
+          ECHO: true,
+          // 启用回显
+          ISIG: true
+          // 启用信号处理，确保Ctrl+C等信号正常工作
+        }
+      }, (err, stream) => {
         if (err) {
           console.error("创建shell失败:", err);
           updateStatus(sshClient, id, config, "error");
@@ -372,8 +385,6 @@ async function createSSHClient(id, config, event) {
         });
         updateStatus(sshClient, id, config, "connected");
         setTimeout(() => {
-          console.log(`[SSH ${id}] 发送初始命令: whoami`);
-          stream.write("whoami\n");
         }, 1e3);
         finish(true, "连接成功");
       });
@@ -462,7 +473,17 @@ function sendCommand(id, command) {
   const sshClient = clients.get(id);
   if (!sshClient?._shellStream) return { success: false, message: "未建立连接" };
   try {
-    const payload = typeof command === "string" ? command.replace(/\r/g, "\n") : String(command);
+    let payload;
+    if (typeof command === "string") {
+      const hasControlChars = /[\x00-\x1F]/.test(command);
+      if (hasControlChars) {
+        payload = command;
+      } else {
+        payload = command.replace(/\r/g, "\n");
+      }
+    } else {
+      payload = String(command);
+    }
     sshClient._shellStream.write(Buffer.from(payload, "utf8"));
     return { success: true };
   } catch (e) {
@@ -478,13 +499,12 @@ function disconnectSSH(id) {
   clients.delete(id);
   return { success: true, message: "连接已断开" };
 }
+function getSSHClient(id) {
+  return clients.get(String(id));
+}
 function registerSSHHandlers() {
   ipcMain.handle("ssh-connect", async (event, id, config) => {
     try {
-      console.log("ssh-connect handler 接收到的参数:", {
-        id,
-        config: JSON.stringify(config, null, 2)
-      });
       console.log("config对象的所有键:", Object.keys(config));
       return await createSSHClient(id, config, event);
     } catch (error) {
@@ -546,6 +566,521 @@ function registerDialogHandlers() {
     }
   });
 }
+const uploadTasks = /* @__PURE__ */ new Map();
+async function uploadFile(sessionId, localPath, remotePath, progressCallback, customUploadId) {
+  sessionId = String(sessionId);
+  const client = getSSHClient(sessionId);
+  if (!client) {
+    return { success: false, message: "SSH 会话未连接" };
+  }
+  const uploadId = customUploadId || `${sessionId}-${Date.now()}`;
+  console.log(`使用上传ID: ${uploadId}, 是否使用自定义ID: ${!!customUploadId}`);
+  try {
+    if (!fs.existsSync(localPath)) {
+      console.error("本地文件不存在:", localPath);
+      return { success: false, message: `本地文件不存在: ${localPath}` };
+    }
+    const localFileStats = fs.statSync(localPath);
+    if (!localFileStats.isFile()) {
+      console.error("本地路径不是文件:", localPath);
+      return { success: false, message: `本地路径不是文件: ${localPath}` };
+    }
+    if (remotePath.endsWith("/")) {
+      const fileName = path.basename(localPath);
+      const newRemotePath = remotePath + fileName;
+      remotePath = newRemotePath;
+    }
+    if (remotePath.endsWith("/")) {
+      console.error("远程路径是目录，需要指定文件名:", remotePath);
+      return {
+        success: false,
+        message: `无法上传到目录路径。请在路径 ${remotePath} 后添加文件名。`,
+        error: {
+          code: "PATH_IS_DIRECTORY",
+          message: "Remote path is a directory, not a file path"
+        }
+      };
+    }
+    const finalRemotePath = remotePath;
+    return new Promise((resolve, reject) => {
+      client.sftp((err, sftp) => {
+        if (err) {
+          console.error("创建SFTP连接失败:", err);
+          return resolve({
+            success: false,
+            message: `创建SFTP连接失败: ${err.message}`,
+            error: {
+              code: err.code,
+              message: err.message,
+              stack: err.stack,
+              type: Object.prototype.toString.call(err)
+            }
+          });
+        }
+        const remoteDir = path.dirname(finalRemotePath);
+        if (progressCallback) {
+          progressCallback({
+            sessionId,
+            fileName: path.basename(localPath),
+            bytesTransferred: 0,
+            totalBytes: localFileStats.size,
+            percent: 0,
+            status: "checking_dir"
+          });
+        }
+        ensureRemoteDirectory(sftp, remoteDir).then(() => {
+          if (progressCallback) {
+            progressCallback({
+              sessionId,
+              fileName: path.basename(localPath),
+              bytesTransferred: 0,
+              totalBytes: localFileStats.size,
+              percent: 0,
+              status: "starting"
+            });
+          }
+          const fileSize = localFileStats.size;
+          let uploadedBytes = 0;
+          try {
+            const readStream = fs.createReadStream(localPath);
+            const writeStream = sftp.createWriteStream(finalRemotePath);
+            uploadTasks.set(uploadId, {
+              sessionId,
+              localPath,
+              remotePath: finalRemotePath,
+              readStream,
+              writeStream,
+              startTime: Date.now(),
+              isCancelled: false
+            });
+            readStream.on("error", (readErr) => {
+              console.error("读取本地文件错误:", readErr);
+              resolve({
+                success: false,
+                message: `读取本地文件错误: ${readErr.message}`,
+                error: {
+                  code: readErr.code,
+                  message: readErr.message,
+                  stack: readErr.stack,
+                  type: "ReadStreamError"
+                }
+              });
+            });
+            readStream.on("data", (chunk) => {
+              uploadedBytes += chunk.length;
+              const percent = Math.round(uploadedBytes / fileSize * 100);
+              if (progressCallback) {
+                progressCallback({
+                  sessionId,
+                  fileName: path.basename(localPath),
+                  bytesTransferred: uploadedBytes,
+                  totalBytes: fileSize,
+                  percent,
+                  status: "uploading"
+                });
+              }
+            });
+            writeStream.on("close", () => {
+              console.log(`⭐ writeStream close 事件触发，uploadId: ${uploadId}`);
+              const uploadTask = uploadTasks.get(uploadId);
+              if (uploadTask && uploadTask.isCancelled) {
+                console.log(`⭐ 检测到上传被取消: ${uploadId}`);
+                uploadTasks.delete(uploadId);
+                resolve({
+                  success: false,
+                  message: "文件上传已取消",
+                  cancelled: true
+                });
+                return;
+              }
+              uploadTasks.delete(uploadId);
+              resolve({
+                success: true,
+                message: "文件上传成功",
+                uploadId,
+                details: {
+                  localPath,
+                  remotePath: finalRemotePath,
+                  fileName: path.basename(localPath),
+                  fileSize
+                }
+              });
+            });
+            writeStream.on("error", (writeErr) => {
+              console.error("文件上传错误:", writeErr);
+              uploadTasks.delete(uploadId);
+              let errorMessage = writeErr.message;
+              if (writeErr.code === 4) {
+                if (errorMessage.includes("Permission denied")) {
+                  errorMessage = `没有权限写入文件: ${finalRemotePath}`;
+                } else if (errorMessage.includes("Failure")) {
+                  if (finalRemotePath.endsWith("/")) {
+                    errorMessage = `无法写入文件，路径 ${finalRemotePath} 是一个目录，无法作为文件写入。请指定完整的文件路径，包含文件名。`;
+                  } else {
+                    const fileName = path.basename(remotePath);
+                    const dirName = path.dirname(remotePath);
+                    errorMessage = `无法写入文件 ${fileName}，可能的原因：1) 目标文件已存在且无法覆盖，2) 目标目录权限问题，或 3) 目标磁盘空间不足。`;
+                    errorMessage += ` 请确认: a) 文件名正确，b) 目标位置有足够空间，c) SELinux/AppArmor策略没有限制写入。`;
+                  }
+                }
+              }
+              resolve({
+                success: false,
+                message: `文件上传错误: ${errorMessage}`,
+                error: {
+                  code: writeErr.code,
+                  message: writeErr.message,
+                  stack: writeErr.stack,
+                  type: "WriteStreamError",
+                  originalPath: remotePath,
+                  finalPath: finalRemotePath
+                }
+              });
+            });
+            readStream.pipe(writeStream);
+          } catch (streamErr) {
+            console.error("创建流错误:", streamErr);
+            resolve({
+              success: false,
+              message: `创建传输流错误: ${streamErr.message}`,
+              error: {
+                code: streamErr.code,
+                message: streamErr.message,
+                stack: streamErr.stack,
+                type: "StreamCreationError"
+              }
+            });
+          }
+        }).catch((dirErr) => {
+          console.error("创建远程目录失败:", dirErr);
+          resolve({
+            success: false,
+            message: `创建远程目录失败: ${dirErr.message || dirErr}`,
+            error: {
+              message: dirErr.message,
+              stack: dirErr.stack,
+              type: "DirectoryCreationError"
+            }
+          });
+        });
+      });
+    });
+  } catch (error) {
+    console.error("上传文件过程中发生未捕获异常:", error);
+    return {
+      success: false,
+      message: `上传文件过程中发生未捕获异常: ${error.message}`,
+      error: {
+        code: error.code,
+        message: error.message,
+        stack: error.stack,
+        type: "UncaughtException"
+      }
+    };
+  }
+}
+async function ensureRemoteDirectory(sftp, dirPath) {
+  if (dirPath === "/" || dirPath === ".") {
+    return Promise.resolve();
+  }
+  return new Promise((resolve, reject) => {
+    sftp.stat(dirPath, (err, stats) => {
+      if (err) {
+        if (err.code === 2) {
+          const parentDir = path.dirname(dirPath);
+          ensureRemoteDirectory(sftp, parentDir).then(() => {
+            sftp.mkdir(dirPath, (mkdirErr) => {
+              if (mkdirErr) {
+                console.error(`创建目录 ${dirPath} 时出错:`, {
+                  code: mkdirErr.code,
+                  message: mkdirErr.message
+                });
+                if (mkdirErr.code === 4) {
+                  sftp.stat(dirPath, (statErr, stats2) => {
+                    if (statErr) {
+                      console.error(`无法获取目录 ${dirPath} 状态:`, {
+                        code: statErr.code,
+                        message: statErr.message
+                      });
+                      if (mkdirErr.message.includes("Permission denied")) {
+                        reject(new Error(`没有权限创建目录 ${dirPath}: 权限被拒绝`));
+                      } else {
+                        reject(new Error(`无法创建目录 ${dirPath}: ${mkdirErr.message}`));
+                      }
+                    } else if (stats2.isDirectory()) {
+                      resolve();
+                    } else {
+                      reject(new Error(`路径 ${dirPath} 存在但不是目录`));
+                    }
+                  });
+                } else {
+                  let errorMessage = `创建目录失败 ${dirPath}: ${mkdirErr.message}`;
+                  if (mkdirErr.message.includes("Permission denied")) {
+                    errorMessage = `没有权限创建目录 ${dirPath}`;
+                  }
+                  reject(new Error(errorMessage));
+                }
+              } else {
+                resolve();
+              }
+            });
+          }).catch((parentErr) => {
+            console.error(`确保父目录 ${parentDir} 存在时失败:`, parentErr);
+            reject(parentErr);
+          });
+        } else {
+          let errorMessage = `检查目录状态失败: ${err.message}`;
+          if (err.message.includes("Permission denied")) {
+            errorMessage = `没有权限访问目录 ${dirPath}`;
+          }
+          console.error(errorMessage);
+          reject(new Error(errorMessage));
+        }
+      } else {
+        if (stats.isDirectory()) {
+          sftp.open(`${dirPath}/.write_test_${Date.now()}`, "w", (openErr, handle) => {
+            if (openErr) {
+              if (openErr.message.includes("Permission denied")) {
+                console.warn(`目录 ${dirPath} 存在，但可能没有写入权限`);
+                resolve();
+              } else {
+                resolve();
+              }
+            } else {
+              sftp.close(handle, () => {
+                sftp.unlink(`${dirPath}/.write_test_${Date.now()}`, () => {
+                  resolve();
+                });
+              });
+            }
+          });
+        } else {
+          console.error(`路径 ${dirPath} 存在但不是目录`);
+          reject(new Error(`路径 ${dirPath} 存在但不是目录`));
+        }
+      }
+    });
+  });
+}
+async function listDirectory(sessionId, remotePath) {
+  sessionId = String(sessionId);
+  const client = getSSHClient(sessionId);
+  if (!client) {
+    return { success: false, message: "SSH 会话未连接" };
+  }
+  return new Promise((resolve, reject) => {
+    client.sftp((err, sftp) => {
+      if (err) {
+        console.error("创建SFTP连接失败:", err);
+        return resolve({ success: false, message: `创建SFTP连接失败: ${err.message}` });
+      }
+      sftp.readdir(remotePath, (err2, list) => {
+        if (err2) {
+          console.error("读取目录失败:", err2);
+          return resolve({ success: false, message: `读取目录失败: ${err2.message}` });
+        }
+        const files = list.map((item) => ({
+          filename: item.filename,
+          longname: item.longname,
+          attrs: {
+            size: item.attrs.size,
+            mtime: item.attrs.mtime,
+            isDirectory: item.attrs.isDirectory()
+          }
+        }));
+        resolve({
+          success: true,
+          data: files,
+          path: remotePath
+        });
+      });
+    });
+  });
+}
+async function createDirectory(sessionId, remotePath) {
+  sessionId = String(sessionId);
+  const client = getSSHClient(sessionId);
+  if (!client) {
+    return { success: false, message: "SSH 会话未连接" };
+  }
+  return new Promise((resolve, reject) => {
+    client.sftp((err, sftp) => {
+      if (err) {
+        console.error("创建SFTP连接失败:", err);
+        return resolve({ success: false, message: `创建SFTP连接失败: ${err.message}` });
+      }
+      sftp.mkdir(remotePath, (err2) => {
+        if (err2) {
+          console.error("创建目录失败:", err2);
+          return resolve({ success: false, message: `创建目录失败: ${err2.message}` });
+        }
+        resolve({
+          success: true,
+          message: "目录创建成功",
+          path: remotePath
+        });
+      });
+    });
+  });
+}
+function dumpUploadTasks() {
+  console.log("==== 当前上传任务状态 ====");
+  console.log(`任务总数: ${uploadTasks.size}`);
+  for (const [id, task] of uploadTasks.entries()) {
+    console.log(`任务ID: ${id}`);
+    console.log(`  - 会话ID: ${task.sessionId}`);
+    console.log(`  - 本地路径: ${task.localPath}`);
+    console.log(`  - 远程路径: ${task.remotePath}`);
+    console.log(`  - 开始时间: ${new Date(task.startTime).toISOString()}`);
+    console.log(`  - 已取消: ${task.isCancelled}`);
+    console.log("  ---");
+  }
+  console.log("=======================");
+}
+async function cancelUpload(sessionId, uploadId) {
+  try {
+    console.log(`⭐ sftpManager.cancelUpload - 尝试取消上传: sessionId=${sessionId}, uploadId=${uploadId}`);
+    dumpUploadTasks();
+    const uploadTask = uploadTasks.get(uploadId);
+    if (!uploadTask) {
+      console.log(`⭐ 上传任务不存在或已完成: ${uploadId}`);
+      return { success: false, message: "上传任务不存在或已完成" };
+    }
+    console.log(`⭐ 找到上传任务:`, {
+      sessionId: uploadTask.sessionId,
+      localPath: uploadTask.localPath,
+      remotePath: uploadTask.remotePath,
+      startTime: uploadTask.startTime,
+      isCancelled: uploadTask.isCancelled
+    });
+    if (uploadTask.sessionId !== String(sessionId)) {
+      console.warn(`⭐ 会话ID不匹配: 期望 ${uploadTask.sessionId}, 收到 ${sessionId}`);
+      return { success: false, message: "会话ID不匹配" };
+    }
+    uploadTask.isCancelled = true;
+    console.log(`⭐ 已将任务标记为取消`);
+    if (uploadTask.readStream && typeof uploadTask.readStream.destroy === "function") {
+      console.log(`⭐ 正在销毁读取流`);
+      uploadTask.readStream.destroy();
+    } else {
+      console.log(`⭐ 读取流不存在或不可销毁`);
+    }
+    if (uploadTask.writeStream && typeof uploadTask.writeStream.destroy === "function") {
+      console.log(`⭐ 正在销毁写入流`);
+      uploadTask.writeStream.destroy();
+    } else {
+      console.log(`⭐ 写入流不存在或不可销毁`);
+    }
+    console.log(`⭐ 成功取消上传: ${uploadId}`);
+    return { success: true, message: "上传已取消" };
+  } catch (error) {
+    console.error(`⭐ 取消上传时出错: ${uploadId}`, error);
+    return {
+      success: false,
+      message: `取消上传时出错: ${error.message}`,
+      error: {
+        code: error.code,
+        message: error.message,
+        stack: error.stack
+      }
+    };
+  }
+}
+function registerSFTPHandlers() {
+  ipcMain.handle("sftp-upload", async (event, sessionId, localPath, remotePath, tempUploadId) => {
+    try {
+      console.log("处理SFTP上传请求:", {
+        sessionId,
+        localPath,
+        remotePath,
+        tempUploadId
+      });
+      if (!localPath) {
+        console.log("未提供本地文件路径，打开文件选择对话框");
+        const window = BrowserWindow.fromWebContents(event.sender);
+        const result2 = await dialog.showOpenDialog(window, {
+          title: "选择要上传的文件",
+          properties: ["openFile"]
+        });
+        if (result2.canceled || result2.filePaths.length === 0) {
+          console.log("用户取消了文件选择");
+          return { success: false, message: "没有选择文件" };
+        }
+        localPath = result2.filePaths[0];
+        console.log("用户选择了文件:", localPath);
+      }
+      if (!sessionId) {
+        console.error("无效的会话ID");
+        return { success: false, message: "无效的会话ID" };
+      }
+      if (!remotePath) {
+        console.error("未提供远程路径");
+        return { success: false, message: "请提供远程路径" };
+      }
+      const progressCallback = (progress) => {
+        try {
+          event.sender.send(`sftp-upload-progress:${sessionId}`, progress);
+        } catch (progressError) {
+          console.error("发送进度更新失败:", progressError);
+        }
+      };
+      console.log(`开始上传文件: ${localPath} → ${remotePath}${tempUploadId ? ", uploadId: " + tempUploadId : ""}`);
+      const result = await uploadFile(sessionId, localPath, remotePath, progressCallback, tempUploadId);
+      console.log("文件上传结果:", result);
+      return result;
+    } catch (error) {
+      console.error("sftp-upload 处理过程中发生异常:", error);
+      return {
+        success: false,
+        message: `文件上传异常: ${error.message}`,
+        error: {
+          code: error.code,
+          message: error.message,
+          stack: error.stack
+        }
+      };
+    }
+  });
+  ipcMain.handle("sftp-list-directory", async (event, sessionId, remotePath) => {
+    try {
+      return await listDirectory(sessionId, remotePath);
+    } catch (error) {
+      console.error("sftp-list-directory error:", error);
+      return { success: false, message: error.message };
+    }
+  });
+  ipcMain.handle("sftp-mkdir", async (event, sessionId, remotePath) => {
+    try {
+      return await createDirectory(sessionId, remotePath);
+    } catch (error) {
+      console.error("sftp-mkdir error:", error);
+      return { success: false, message: error.message };
+    }
+  });
+  ipcMain.handle("sftp-cancel-upload", async (event, sessionId, uploadId) => {
+    try {
+      console.log(`收到取消上传请求: sessionId=${sessionId}, uploadId=${uploadId}`);
+      if (!sessionId || !uploadId) {
+        console.error("无效的会话ID或上传ID");
+        return { success: false, message: "无效的参数" };
+      }
+      const result = await cancelUpload(sessionId, uploadId);
+      console.log("取消上传结果:", result);
+      return result;
+    } catch (error) {
+      console.error("sftp-cancel-upload error:", error);
+      return {
+        success: false,
+        message: `取消上传失败: ${error.message}`,
+        error: {
+          code: error.code,
+          message: error.message,
+          stack: error.stack
+        }
+      };
+    }
+  });
+}
 function registerWindowHandlers() {
   console.log("Registering window handlers...");
   ipcMain.handle("window-create-session", async (event, sessionData) => {
@@ -599,6 +1134,8 @@ function registerIPCHandlers() {
     console.log("✓ Database handlers registered");
     registerSSHHandlers();
     console.log("✓ SSH handlers registered");
+    registerSFTPHandlers();
+    console.log("✓ SFTP handlers registered");
     registerDialogHandlers();
     console.log("✓ Dialog handlers registered");
     registerWindowHandlers();

@@ -72,7 +72,16 @@ export async function createSSHClient(id, config, event) {
 
     sshClient.on('ready', () => {
       console.log('SSH客户端ready事件触发, id:', id);
-      sshClient.shell((err, stream) => {
+      sshClient.shell({
+        term: 'xterm-256color',  // 设置终端类型，确保支持全功能
+        width: 80,
+        height: 24,
+        modes: {
+          ICANON: false,   // 禁用行缓冲模式，启用原始模式
+          ECHO: true,      // 启用回显
+          ISIG: true       // 启用信号处理，确保Ctrl+C等信号正常工作
+        }
+      }, (err, stream) => {
         if (err) {
           console.error('创建shell失败:', err);
           updateStatus(sshClient, id, config, 'error');
@@ -106,8 +115,7 @@ export async function createSSHClient(id, config, event) {
         
         // 发送初始命令来触发输出
         setTimeout(() => {
-          console.log(`[SSH ${id}] 发送初始命令: whoami`);
-          stream.write('whoami\n');
+          // stream.write('whoami\n');
         }, 1000);
         
         finish(true, '连接成功');
@@ -221,7 +229,19 @@ export function sendCommand(id, command) {
   if (!sshClient?._shellStream) return { success: false, message: '未建立连接' };
 
   try {
-    const payload = typeof command === 'string' ? command.replace(/\r/g, '\n') : String(command);
+    // 对于控制字符（如Ctrl+C），保持原始数据不变
+    let payload;
+    if (typeof command === 'string') {
+      // 检查是否包含控制字符（ASCII < 32），如果有则不做替换
+      const hasControlChars = /[\x00-\x1F]/.test(command);
+      if (hasControlChars) {
+        payload = command;  // 保持控制字符原样
+      } else {
+        payload = command.replace(/\r/g, '\n');  // 只对普通文本做替换
+      }
+    } else {
+      payload = String(command);
+    }
     sshClient._shellStream.write(Buffer.from(payload, 'utf8'));
     return { success: true };
   } catch (e) {

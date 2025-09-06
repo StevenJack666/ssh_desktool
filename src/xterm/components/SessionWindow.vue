@@ -9,6 +9,11 @@
         </span>
       </div>
       <div class="session-actions">
+        <!-- 文件上传按钮 -->
+        <FileUpload 
+          :session-id="currentSessionId" 
+          :disabled="!isConnected"
+        />
         <button @click="handleReconnect" :disabled="isConnecting" class="action-btn">
           {{ isConnecting ? '连接中...' : '重新连接' }}
         </button>
@@ -40,6 +45,8 @@
 <script setup>
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import { useSSHSession } from '../composables/useSSHSession.js'
+import { useSFTP } from '../composables/useSFTP.js'
+import FileUpload from './FileUpload.vue'
 
 // 会话数据（从主窗口传递过来）
 const sessionData = ref(null)
@@ -55,6 +62,9 @@ const {
   deleteSession,
   setTerminalContainer
 } = useSSHSession()
+
+// 使用 SFTP 功能
+const { uploads, hasActiveUploads } = useSFTP()
 
 // 计算属性
 const sessionTitle = computed(() => {
