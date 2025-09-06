@@ -237,7 +237,7 @@ const showSessionDropdown = ref(false)
 const sessionSwitcher = ref(null)
 
 // 文件上传功能
-const { uploads, hasActiveUploads, uploadFile, getUploadStatus, cancelUpload } = useSFTP()
+const { uploads, hasActiveUploads, uploadFile, getUploadStatus, cancelUpload, clearFinishedUploads } = useSFTP()
 
 // 上传进度对话框状态
 const showUploadProgressDialog = ref(false)
@@ -589,10 +589,12 @@ function handleInputDialogConfirm(value) {
         currentUploadId.value = error.uploadId
       }
     })
+    /* 不在上传后清空上传数据，这样重试功能可以继续使用这些数据
     .finally(() => {
       // 清理上传数据
       uploadFileData.value = { sessionId: null, localPath: null, remotePath: null }
     })
+    */
 }
 
 // 处理输入对话框取消
@@ -603,19 +605,69 @@ function handleInputDialogCancel() {
 
 // 关闭上传进度对话框
 function handleCloseUploadDialog() {
-  showUploadProgressDialog.value = false
-  currentUploadId.value = null
+  console.log('👉 关闭上传进度对话框，清除上传相关信息');
+  
+  // 关闭对话框
+  showUploadProgressDialog.value = false;
+  
+  // 清除上传ID
+  if (currentUploadId.value) {
+    const uploadData = uploads.value.get(currentUploadId.value);
+    console.log('👉 清除上传缓存信息:', { 
+      uploadId: currentUploadId.value, 
+      status: uploadData?.status 
+    });
+    currentUploadId.value = null;
+  }
+  
+  // 清理上传数据
+  uploadFileData.value = { sessionId: null, localPath: null, remotePath: null };
+  
+  // 清理已完成的上传记录，但保留最近的2条记录
+  // 参数：会话ID（null表示所有会话），是否保留已取消的记录（false），保留最近的记录数量（2）
+  const deletedCount = clearFinishedUploads(null, false, 2);
+  if (deletedCount > 0) {
+    console.log(`👉 已清理 ${deletedCount} 条已完成的上传记录`);
+  }
 }
 
 // 重试上传
 function handleRetryUpload() {
-  if (!uploadFileData.value.sessionId || !uploadFileData.value.remotePath) {
+  console.log('👉 handleRetryUpload 被调用，当前 uploadFileData:', uploadFileData.value);
+  
+  if (!uploadFileData.value.sessionId || !uploadFileData.value.remotePath || !uploadFileData.value.localPath) {
+    console.warn('无法重试上传，缺少必要的上传信息:', uploadFileData.value);
     alert('无法重试上传，会话或路径无效')
     return
   }
   
-  // 重新打开文件选择对话框
-  handleUploadFile(getServerById(uploadFileData.value.sessionId))
+  // 从 uploadFileData 中获取必要信息
+  const { sessionId, localPath, remotePath } = uploadFileData.value;
+  console.log('👉 准备重试上传:', { sessionId, localPath, remotePath });
+  
+  // 生成新的上传ID
+  const tempUploadId = `${sessionId}-${Date.now()}`;
+  currentUploadId.value = tempUploadId;
+  
+  // 显示上传进度对话框
+  showUploadProgressDialog.value = true;
+  
+  // 直接开始上传，而不是重新打开文件选择对话框
+  uploadFile(sessionId, localPath, remotePath, tempUploadId)
+    .then(result => {
+      if (result.success) {
+        console.log('👉 重试上传成功:', result);
+        currentUploadId.value = result.uploadId;
+      } else {
+        console.error('👉 重试上传失败:', result);
+      }
+    })
+    .catch(error => {
+      console.error('👉 重试上传错误:', error);
+      if (error.uploadId) {
+        currentUploadId.value = error.uploadId;
+      }
+    });
 }
 
 // 取消上传
@@ -651,6 +703,32 @@ async function handleCancelUpload() {
     
     if (result) {
       console.log('上传已成功取消:', currentUploadId.value)
+      
+      // 保存当前上传的相关信息
+      if (currentUploadId.value) {
+        const upload = uploads.value.get(currentUploadId.value);
+        if (upload) {
+          // 保存会话ID和路径以便重试
+          console.log('👉 保存上传信息以便重试:', {
+            sessionId: upload.sessionId,
+            localPath: upload.localPath,
+            remotePath: upload.remotePath
+          });
+          uploadFileData.value = {
+            sessionId: upload.sessionId,
+            localPath: upload.localPath,
+            remotePath: upload.remotePath
+          };
+          
+          // 更新状态为已取消
+          uploads.value.set(currentUploadId.value, {
+            ...upload,
+            status: 'error',
+            error: '上传已取消',
+            endTime: Date.now()
+          });
+        }
+      }
     } else {
       console.warn('取消上传失败:', currentUploadId.value)
     }
@@ -659,7 +737,7 @@ async function handleCancelUpload() {
   }
   
   // 不关闭对话框，让用户看到取消状态
-  // 状态会自动更新为"已取消"
+  // 状态更新为"已取消/错误"，这样可以显示重试按钮
 }
 
 function openSettings() {
@@ -719,6 +797,13 @@ onMounted(() => {
   // 初始化窗口事件监听器
   initializeEventListeners()
 })
+
+// 组件挂载后自动清理旧的上传记录
+onMounted(() => {
+  // 清理所有旧的上传记录，只保留最近的3条记录
+  const deletedCount = clearFinishedUploads(null, false, 3);
+  console.log(`👉 组件挂载时已清理 ${deletedCount} 条过期的上传记录`);
+});
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)

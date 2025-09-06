@@ -39,6 +39,11 @@
         <div class="error-message">{{ uploadData.error }}</div>
       </div>
       
+      <div v-if="uploadData.status === 'cancelled'" class="upload-error">
+        <div class="error-icon">�</div>
+        <div class="error-message">上传已取消</div>
+      </div>
+      
       <div v-if="uploadData.status === 'completed'" class="upload-success">
         <div class="success-icon">✓</div>
         <div class="success-message">上传成功!</div>
@@ -48,14 +53,14 @@
     <!-- 按钮区域 -->
     <div class="progress-actions" v-if="showActions">
       <button 
-        v-if="uploadData.status === 'error'" 
+        v-if="uploadData.status === 'error' || uploadData.status === 'cancelled'" 
         @click="$emit('retry')" 
         class="action-button retry">
         重试
       </button>
       
       <button 
-        v-if="uploadData.status === 'completed' || uploadData.status === 'error'" 
+        v-if="uploadData.status === 'completed' || uploadData.status === 'error' || uploadData.status === 'cancelled'" 
         @click="$emit('close')" 
         class="action-button close">
         关闭

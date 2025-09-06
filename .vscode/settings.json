@@ -1,0 +1,12 @@
+{
+  "git.enabled": true,
+  "git.autorefresh": true,
+  "git.autofetch": false,
+  "git.confirmSync": true,
+  "git.fetchOnPull": false,
+  "git.ignoreLimitWarning": true,
+  "git.ignoreMissingGitWarning": false,
+  "git.ignoreWindowsGit27Warning": true,
+  "git.detectSubmodules": false,
+  "git.detectSubmodulesLimit": 10
+}

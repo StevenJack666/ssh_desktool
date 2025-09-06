@@ -174,14 +174,42 @@ export function useSFTP() {
   /**
    * 清理已完成或出错的上传记录
    * @param {string} sessionId 可选，如果提供则只清理指定会话的上传
+   * @param {boolean} keepCancelled 是否保留已取消的上传记录（默认不保留）
+   * @param {number} keepRecent 保留最近的记录数量（默认0，不保留）
    */
-  function clearFinishedUploads(sessionId = null) {
+  function clearFinishedUploads(sessionId = null, keepCancelled = false, keepRecent = 0) {
+    console.log(`🔄 清理已完成上传，参数:`, { sessionId, keepCancelled, keepRecent });
+    
+    // 首先收集要删除的记录
+    const uploadsToDelete = [];
+    const finishedUploads = [];
+    
+    // 收集符合条件的上传记录
     for (const [id, upload] of uploads.value.entries()) {
-      if ((sessionId === null || upload.sessionId === String(sessionId)) && 
-          (upload.status === 'completed' || upload.status === 'error')) {
-        uploads.value.delete(id);
+      const isSessionMatch = (sessionId === null || upload.sessionId === String(sessionId));
+      const isFinished = (upload.status === 'completed' || upload.status === 'error' || 
+                         (!keepCancelled && upload.status === 'cancelled'));
+      
+      if (isSessionMatch && isFinished) {
+        finishedUploads.push({ id, upload, timestamp: upload.endTime || upload.startTime || 0 });
       }
     }
+    
+    // 按时间戳排序
+    finishedUploads.sort((a, b) => b.timestamp - a.timestamp);
+    
+    // 保留最近的记录
+    for (let i = keepRecent; i < finishedUploads.length; i++) {
+      uploadsToDelete.push(finishedUploads[i].id);
+    }
+    
+    // 执行删除
+    console.log(`🔄 将删除 ${uploadsToDelete.length} 条上传记录，保留 ${Math.min(keepRecent, finishedUploads.length)} 条`);
+    for (const id of uploadsToDelete) {
+      uploads.value.delete(id);
+    }
+    
+    return uploadsToDelete.length; // 返回删除的记录数量
   }
   
   /**
