@@ -117,4 +117,32 @@ export function registerSFTPHandlers() {
             };
         }
     });
+    
+    // 获取当前远程工作目录
+    ipcMain.handle('sftp-get-current-directory', async (event, sessionId) => {
+        try {
+            console.log(`获取当前远程工作目录: sessionId=${sessionId}`);
+            
+            if (!sessionId) {
+                console.error('无效的会话ID');
+                return { success: false, message: '无效的会话ID' };
+            }
+            
+            // 调用SSH执行pwd命令获取当前工作目录
+            const result = await sftpManager.getCurrentDirectory(sessionId);
+            console.log('获取当前工作目录结果:', result);
+            return result;
+        } catch (error) {
+            console.error('sftp-get-current-directory error:', error);
+            return { 
+                success: false, 
+                message: `获取当前工作目录失败: ${error.message}`,
+                error: {
+                    code: error.code,
+                    message: error.message,
+                    stack: error.stack
+                }
+            };
+        }
+    });
 }

@@ -295,6 +295,24 @@ export function useSFTP() {
     }
   }
   
+  /**
+   * 获取当前远程工作目录
+   * @param {string} sessionId SSH会话ID
+   * @returns {Promise<object>} 包含当前工作目录的结果对象
+   */
+  async function getCurrentDirectory(sessionId) {
+    if (!window.api?.sftp?.getCurrentDirectory) {
+      throw new Error('获取当前目录功能不可用');
+    }
+    
+    try {
+      return await window.api.sftp.getCurrentDirectory(sessionId);
+    } catch (error) {
+      console.error('[SFTP] 获取当前目录时出错', error);
+      throw error;
+    }
+  }
+
   return {
     uploads,
     hasActiveUploads,
@@ -304,6 +322,7 @@ export function useSFTP() {
     clearFinishedUploads,
     listDirectory,
     createDirectory,
-    cancelUpload
+    cancelUpload,
+    getCurrentDirectory
   };
 }

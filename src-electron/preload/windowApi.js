@@ -53,7 +53,4 @@ const windowApi = {
     }
   }
 }
-
-console.log('Window API module loaded')
-
 export default windowApi

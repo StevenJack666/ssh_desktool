@@ -504,6 +504,134 @@ function dumpUploadTasks() {
   console.log('=======================');
 }
 
+/**
+ * 获取当前远程工作目录
+ * @param {string} sessionId - SSH会话ID
+ * @returns {Promise<object>} 包含当前工作目录的结果对象
+ */
+export async function getCurrentDirectory(sessionId) {
+  sessionId = String(sessionId);
+  const client = getSSHClient(sessionId);
+  
+  if (!client) {
+    return { success: false, message: 'SSH 会话未连接' };
+  }
+  
+  // 获取连接配置信息
+  const config = client._sshConfig || {};
+  // 基于用户名创建默认目录
+  const defaultDirectory = config.username ? `/home/${config.username}/` : '/';
+
+  // 创建一个不会显示在用户终端的新命令通道
+  return new Promise((resolve) => {
+    console.log(`尝试获取会话 ${sessionId} 的当前工作目录`);
+    
+    // 创建一个独立的exec连接，但使用PTY模式
+    // 启用PTY模式可以确保命令在与用户相同的环境中执行
+    client.exec('pwd', { pty: true }, (err, stream) => {
+      if (err) {
+        console.error('执行pwd命令失败:', err);
+        return resolve({ 
+          success: true, 
+          directory: defaultDirectory,
+          message: `使用默认目录 (执行失败: ${err.message})`,
+          usingDefault: true
+        });
+      }
+      
+      let output = '';
+      let stderr = '';
+      
+      stream.on('data', (data) => {
+        output += data.toString('utf8');
+      });
+      
+      stream.stderr.on('data', (data) => {
+        stderr += data.toString('utf8');
+      });
+      
+      stream.on('close', (code) => {
+        console.log(`pwd命令执行完毕，退出码: ${code}, 原始输出: "${output}", 错误: "${stderr.trim()}"`);
+        
+        // 清理输出中的特殊字符和终端控制序列
+        let cleanOutput = output
+          .replace(/\r?\n/g, '\n') // 规范化换行符
+          .replace(/\x1B\[\??[\d;]*[A-Za-z]/g, '') // 移除ANSI转义序列
+          .trim();
+        
+        // 如果有多行，取第一行非空行
+        if (cleanOutput.includes('\n')) {
+          cleanOutput = cleanOutput.split('\n').filter(line => line.trim()).shift() || '';
+        }
+        
+        console.log(`清理后的目录输出: "${cleanOutput}"`);
+        
+        // 尝试从输出中获取目录，即使有错误也先尝试获取
+        const directory = cleanOutput;
+        
+        // 如果命令执行失败且没有输出，才使用默认目录
+        if ((code !== 0 || stderr) && !directory) {
+          console.error(`获取工作目录失败，错误码: ${code}, 错误信息: ${stderr}`);
+          return resolve({
+            success: true,
+            directory: defaultDirectory,
+            message: `使用默认目录 (命令失败，代码: ${code})`,
+            usingDefault: true
+          });
+        }
+        
+        // 没有得到任何目录信息时使用默认目录
+        if (!directory) {
+          console.warn('pwd命令没有输出，使用默认目录');
+          return resolve({
+            success: true,
+            directory: defaultDirectory,
+            message: '使用默认目录 (命令无输出)',
+            usingDefault: true
+          });
+        }
+        
+        // 确保目录以斜杠结尾
+        const formattedDir = directory.endsWith('/') ? directory : directory + '/';
+        
+        console.log(`成功获取当前工作目录: ${formattedDir}`);
+        resolve({
+          success: true,
+          directory: formattedDir,
+          message: '成功获取当前工作目录'
+        });
+      });
+      
+      // 添加错误处理 - 流错误时尝试使用已收集的输出，如果有的话
+      stream.on('error', (streamErr) => {
+        console.error('获取工作目录流错误:', streamErr);
+        
+        // 如果已经收集了一些输出，尝试使用它
+        if (output && output.trim()) {
+          const directory = output.trim();
+          const formattedDir = directory.endsWith('/') ? directory : directory + '/';
+          
+          console.log(`尽管有错误，但已获取到目录: ${formattedDir}`);
+          return resolve({
+            success: true,
+            directory: formattedDir,
+            message: '成功获取当前工作目录 (尽管有错误)',
+            hadError: true
+          });
+        }
+        
+        // 否则使用默认目录
+        resolve({
+          success: true,
+          directory: defaultDirectory,
+          message: `使用默认目录 (流错误: ${streamErr.message})`,
+          usingDefault: true
+        });
+      });
+    });
+  });
+}
+
 export async function cancelUpload(sessionId, uploadId) {
   try {
     console.log(`⭐ sftpManager.cancelUpload - 尝试取消上传: sessionId=${sessionId}, uploadId=${uploadId}`);

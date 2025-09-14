@@ -200,6 +200,19 @@ const sftpApi = {
         console.error(`🟡 ipcRenderer.invoke 错误:`, error);
         throw error;
       });
+  },
+  
+  // 获取当前远程工作目录
+  getCurrentDirectory: (sessionId) => {
+    return ipcRenderer.invoke('sftp-get-current-directory', sessionId)
+      .then(result => {
+        console.log(`🟡 getCurrentDirectory 结果:`, result);
+        return result;
+      })
+      .catch(error => {
+        console.error(`🟡 getCurrentDirectory 错误:`, error);
+        throw error;
+      });
   }
 };
 

@@ -60,14 +60,26 @@ const sftpApi = {
    * @returns {Promise<object>} 取消结果
    */
   cancelUpload: (sessionId, uploadId) => {
-    console.log(`🟡 sftpApi.cancelUpload 被调用: sessionId=${sessionId}, uploadId=${uploadId}`);
     return ipcRenderer.invoke('sftp-cancel-upload', sessionId, uploadId)
       .then(result => {
-        console.log(`🟡 ipcRenderer.invoke 结果:`, result);
         return result;
       })
       .catch(error => {
-        console.error(`🟡 ipcRenderer.invoke 错误:`, error);
+        throw error;
+      });
+  },
+  
+  /**
+   * 获取当前远程工作目录
+   * @param {string} sessionId SSH会话ID
+   * @returns {Promise<object>} 包含当前目录的结果
+   */
+  getCurrentDirectory: (sessionId) => {
+    return ipcRenderer.invoke('sftp-get-current-directory', sessionId)
+      .then(result => {
+        return result;
+      })
+      .catch(error => {
         throw error;
       });
   }

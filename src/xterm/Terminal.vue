@@ -500,7 +500,7 @@ function isServerConnected(server) {
 }
 
 // 处理文件上传
-function handleUploadFile(server) {
+async function handleUploadFile(server) {
   if (!server) return
   
   try {
@@ -513,8 +513,31 @@ function handleUploadFile(server) {
       return
     }
     
-    // 远程路径默认为 /home/{username}/
-    const defaultPath = `/home/${server.username}/`
+    // 先尝试获取当前工作目录
+    let defaultPath = `/home/${server.username}/`
+    
+    try {
+      console.log('正在获取当前远程工作目录...')
+      const dirResult = await window.api.sftp.getCurrentDirectory(session.id)
+      
+      if (dirResult && dirResult.success && dirResult.directory) {
+        console.log('获取到当前工作目录:', dirResult.directory)
+        defaultPath = dirResult.directory
+        
+        // 确保目录以/结尾
+        if (!defaultPath.endsWith('/')) {
+          defaultPath += '/'
+        }
+      } else {
+        console.warn('获取当前工作目录失败，将使用默认路径:', defaultPath)
+        if (dirResult && !dirResult.success) {
+          console.warn('错误详情:', dirResult.message || '未知错误')
+        }
+      }
+    } catch (dirError) {
+      console.error('获取当前工作目录时出错:', dirError)
+      // 使用默认路径，不中断上传流程
+    }
     
     // 使用对话框API选择文件
     if (window.api?.dialog) {

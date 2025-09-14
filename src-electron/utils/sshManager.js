@@ -60,6 +60,8 @@ export async function createSSHClient(id, config, event) {
   const sshClient = new Client();
   clients.set(id, sshClient);
   sshClient._sender = event?.sender || null;
+  // 存储连接配置，以便其他模块访问
+  sshClient._sshConfig = { ...config };
 
 
   return new Promise((resolve) => {
